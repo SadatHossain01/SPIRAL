@@ -1,0 +1,104 @@
+# ============================================================================
+# BiRNA-BERT Sparse Autoencoder — Configuration
+# ============================================================================
+# This configuration matches the current training pipeline:
+#   - exact token-count planning from streamed raw sequences
+#   - one fixed activation mean/std per layer from a 1M-sequence subset
+#   - special tokens excluded from SAE training
+#   - separate SAE runs per configured layer
+#   - real-logit evaluation with checkpoint comparison CSVs
+#   - full-cache vs rolling-cache activation extraction selected automatically
+# ============================================================================
+
+# --- Model Settings ---------------------------------------------------------
+model:
+  name: "buetnlpbio/birna-bert"
+  tokenizer: "buetnlpbio/birna-tokenizer"
+  layer_index: 5 # Fallback single layer when layer_indices is null
+  layer_indices: [0, 5, 11] # 0-based encoder blocks; corresponds to user-facing layers 1, 6, 12
+  max_seq_length: 512
+  use_bpe: true
+  quantization: "fp16" # "none" | "fp16" | "bf16" | "int8" | "int4"
+  unload_after_extraction: true
+
+# --- SAE Architecture -------------------------------------------------------
+sae:
+  expansion_factor: 8
+  l1_coeff: 1.0e-3
+  enc_dtype: "fp32"
+  seed: 42
+  enc_init: "kaiming"
+  dec_init: "xavier"
+  subtract_b_dec_in_encoder: false
+  decoder_unit_norm: false
+
+# --- Data Settings ----------------------------------------------------------
+data:
+  # Provide one source:
+  #   1. fasta_path     — local FASTA file
+  #   2. sequence_list  — plain text file, one RNA sequence per line
+  #   3. hf_dataset     — Hugging Face dataset ID
+  fasta_path: null
+  sequence_list: null
+  hf_dataset: "multimolecule/rnacentral"
+  hf_dataset_split: "train"
+  hf_sequence_column: "sequence"
+  num_sequences: 1000000 # 1M sequences (set to null for full dataset)
+  test_split_ratio: 0.001
+  standardize_activations: true
+  stats_num_sequences: 100000
+  planning_batch_size: 65536 # was 1048576 for 128GB RAM
+  planning_prefetch_batches: 4
+  sequence_plan_dir: ".cache/sequence_plan"
+  activation_strategy: "auto" # "auto" | "full" | "rolling"
+  activation_cache_budget_gb: 150.0
+  dataloader_num_workers: null # null = auto (use most cores, keep a small reserve)
+  dataloader_reserved_cores: 2
+  dataloader_prefetch_factor: 2
+  shard_dir: ".cache/act_shards"
+  shard_size: 500000
+  extraction_chunk_size: 2000
+  max_disk_shards: 16 # rolling mode only
+
+# --- Training Hyperparameters ----------------------------------------------
+training:
+  batch_size: 1024
+  learning_rate: 1.0e-3
+  weight_decay: 1.0e-4
+  beta1: 0.9
+  beta2: 0.999
+  num_epochs: 5
+  device: "cuda"
+  extraction_batch_size: 100
+  log_every_n_steps: 50
+  lr_scheduler: "cosine"
+  lr_warmup_steps: 0
+  grad_clip_norm: 1.0
+  dead_neuron_check_steps: 50000
+  dead_neuron_threshold: 1.0e-5
+  dead_neuron_sample_batches: 50
+  checkpoint_every_n_steps: 125000
+  checkpoint_keep_last: 3
+  mixed_precision: true
+  resume_from: null
+
+# --- Evaluation -------------------------------------------------------------
+evaluation:
+  enabled: true
+  mid_training: false
+  num_test_sequences: 256
+  eval_every_n_steps: null # null = fall back to checkpoint interval
+  best_metric: "kl_divergence"
+  best_mode: "min"
+
+# --- Logging ----------------------------------------------------------------
+logging:
+  wandb_enabled: false # set true and use your own entity to enable tracking
+  wandb_project: "sae-rna"
+  wandb_entity: null
+  wandb_api_key: null
+  save_dir: "./checkpoints"
+  hf_upload_enabled: false
+  hf_repo_id: null
+  hf_upload_every_n_epochs: null
+  hf_token: null
